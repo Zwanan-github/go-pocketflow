@@ -215,6 +215,7 @@ func TestBatchNode(t *testing.T) {
 			t.Errorf("Expected ['input1_processed', 'input2_processed'], got '%v'", results)
 		}
 	}
+	t.Logf("results: %v, shared: %v", results, shared)
 }
 
 func TestFlowWithParams(t *testing.T) {
