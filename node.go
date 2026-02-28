@@ -1,9 +1,6 @@
-// Package pocketflow provides a minimal framework for building LLM-powered applications.
-// It offers a node-based architecture with support for retries, batching, async execution, and flow orchestration.
 package pocketflow
 
 import (
-	"log"
 	"reflect"
 )
 
@@ -15,12 +12,10 @@ type ExecFunc func(prepRes any) any
 
 type PostFunc func(shared SharedStore, prepRes, execRes any) string
 
-// NodeRunner 定义节点的执行策略
 type NodeRunner interface {
 	Run(n *Node, shared SharedStore) string
 }
 
-// convertToAnySlice 尝试将各种切片类型转换为 []any
 func convertToAnySlice(value any) []any {
 	v := reflect.ValueOf(value)
 	if v.Kind() != reflect.Slice {
@@ -44,52 +39,39 @@ type Node struct {
 	runner     NodeRunner
 }
 
-// SingleRunner 单次执行策略（默认策略）
 type SingleRunner struct{}
 
 func (r *SingleRunner) Run(n *Node, shared SharedStore) string {
-	log.Printf("[SingleRunner] Running node: %s", n.name)
-
 	var prepRes any
 	if n.prep != nil {
-		log.Printf("[SingleRunner] %s - Prep phase", n.name)
 		prepRes = n.prep(shared)
 	}
 
 	var execRes any
 	if n.exec != nil {
-		log.Printf("[SingleRunner] %s - Exec phase", n.name)
 		execRes = n.exec(prepRes)
 	}
 
 	var action string
 	if n.post != nil {
-		log.Printf("[SingleRunner] %s - Post phase", n.name)
 		action = n.post(shared, prepRes, execRes)
 	} else {
 		action = "default"
 	}
 
-	log.Printf("[SingleRunner] %s - Returning action: %s", n.name, action)
 	return action
 }
 
-// BatchRunner 批量执行策略
 type BatchRunner struct{}
 
 func (r *BatchRunner) Run(n *Node, shared SharedStore) string {
-	log.Printf("[BatchRunner] Running batch node: %s", n.name)
-
 	var prepRes any
 	if n.prep != nil {
-		log.Printf("[BatchRunner] %s - Prep phase", n.name)
 		prepRes = n.prep(shared)
 	}
 
 	var execRes any
 	if n.exec != nil {
-		log.Printf("[BatchRunner] %s - Exec phase", n.name)
-		// 使用反射来处理各种切片类型
 		if items := convertToAnySlice(prepRes); items != nil {
 			results := make([]any, len(items))
 			for i, item := range items {
@@ -97,20 +79,17 @@ func (r *BatchRunner) Run(n *Node, shared SharedStore) string {
 			}
 			execRes = results
 		} else {
-			log.Printf("[BatchRunner] Warning: prep result is not a slice, got %T. Treating as single item.", prepRes)
 			execRes = []any{n.exec(prepRes)}
 		}
 	}
 
 	var action string
 	if n.post != nil {
-		log.Printf("[BatchRunner] %s - Post phase", n.name)
 		action = n.post(shared, prepRes, execRes)
 	} else {
 		action = "default"
 	}
 
-	log.Printf("[BatchRunner] %s - Returning action: %s", n.name, action)
 	return action
 }
 
@@ -167,7 +146,6 @@ func (n *Node) GetNext(action string) *Node {
 }
 
 func (n *Node) Run(shared SharedStore) string {
-	// 委托给执行策略
 	return n.runner.Run(n, shared)
 }
 
@@ -179,7 +157,7 @@ func (n *Node) Clone() *Node {
 		post:       n.post,
 		successors: make(map[string]*Node),
 		params:     make(map[string]any),
-		runner:     n.runner, // runner 是不可变的，可以直接共享
+		runner:     n.runner,
 	}
 
 	for k, v := range n.params {
