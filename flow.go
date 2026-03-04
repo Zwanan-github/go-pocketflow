@@ -31,13 +31,13 @@ type BatchFlow struct {
 	prep BatchPrepFunc
 }
 
+type BatchPrepFunc func(shared SharedStore) []map[string]any
+
 func NewBatchFlow(start *Node) *BatchFlow {
 	return &BatchFlow{
 		Flow: NewFlow(start),
 	}
 }
-
-type BatchPrepFunc func(shared SharedStore) []map[string]any
 
 func (bf *BatchFlow) Prep(fn BatchPrepFunc) *BatchFlow {
 	bf.prep = fn

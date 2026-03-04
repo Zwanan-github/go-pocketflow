@@ -1,7 +1,7 @@
 # go-pocketflow
 
 > Go 版本的 PocketFlow - 极简的 LLM 应用框架
-> 
+>
 > 参考: [PocketFlow](https://github.com/The-Pocket/PocketFlow)
 
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org)
@@ -12,155 +12,32 @@
 - 🎯 **极简设计** - 只有 Node 和 Flow 两个核心概念
 - 🔗 **流畅 API** - 链式调用，编写体验优雅
 - 🌿 **条件分支** - 轻松实现 Agent 模式
-- 📦 **批量处理** - 内置 BatchFlow 支持
+- 📦 **批量处理** - 内置 BatchNode / BatchFlow 支持
+- ⚡ **异步执行** - AsyncNode / AsyncBatchNode 并行处理
 
 ## 快速开始
-
-### 基础节点
 
 ```go
 package main
 
-import (
-    "fmt"
-    pocketflow "github.com/zwanan-github/go-pocketflow"
-)
+import "github.com/zwanan-github/go-pocketflow"
 
 func main() {
-    // 创建测试节点
     node := pocketflow.NewNode("test").
         Prep(func(shared pocketflow.SharedStore) any {
-            return shared["input"]  // 准备：读取输入
+            return shared["input"]
         }).
         Exec(func(prepRes any) any {
-            return prepRes.(string) + " processed"  // 执行：处理数据
+            return prepRes.(string) + " processed"
         }).
         Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
-            shared["output"] = execRes  // 后置：保存结果
+            shared["output"] = execRes
             return "end"
         })
 
-    // 运行节点
     shared := pocketflow.SharedStore{"input": "test data"}
     node.Run(shared)
-
-    fmt.Println(shared["output"])  // 输出：test data processed
 }
-```
-
-### 流程编排
-
-```go
-// 创建节点链
-node1 := pocketflow.NewNode("node1").
-    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
-        shared["step1"] = "done"
-        return "next"
-    })
-
-node2 := pocketflow.NewNode("node2").
-    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
-        shared["step2"] = "done"
-        return "end"
-    })
-
-// 连接节点
-node1.Then(node2)
-
-// 创建并运行流程
-flow := pocketflow.NewFlow(node1)
-shared := pocketflow.SharedStore{}
-flow.Run(shared)
-
-fmt.Printf("Step1: %v, Step2: %v\n", shared["step1"], shared["step2"])
-```
-
-### Agent 模式（条件分支）
-
-```go
-// 决策节点
-decide := pocketflow.NewNode("decide").
-    Prep(func(shared pocketflow.SharedStore) any {
-        return shared["value"]
-    }).
-    Exec(func(prepRes any) any {
-        value := prepRes.(int)
-        if value > 10 {
-            return "large"
-        }
-        return "small"
-    }).
-    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
-        return execRes.(string)
-    })
-
-// 处理节点
-largeHandler := pocketflow.NewNode("large").
-    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
-        shared["result"] = "handled large value"
-        return "end"
-    })
-
-smallHandler := pocketflow.NewNode("small").
-    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
-        shared["result"] = "handled small value"
-        return "end"
-    })
-
-// 设置分支
-decide.ThenWith("large", largeHandler)
-decide.ThenWith("small", smallHandler)
-
-// 创建 Agent 流程
-agentFlow := pocketflow.NewFlow(decide)
-
-// 测试小值
-shared1 := pocketflow.SharedStore{"value": 5}
-agentFlow.Run(shared1)
-fmt.Println(shared1["result"])  // 输出：handled small value
-
-// 测试大值
-shared2 := pocketflow.SharedStore{"value": 15}
-agentFlow.Run(shared2)
-fmt.Println(shared2["result"])  // 输出：handled large value
-```
-
-### 批量处理
-
-```go
-var results []string
-
-// 处理节点
-processNode := pocketflow.NewNode("process").
-    Prep(func(shared pocketflow.SharedStore) any {
-        return shared["item"]
-    }).
-    Exec(func(prepRes any) any {
-        return prepRes.(string) + "_processed"
-    }).
-    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
-        results = append(results, execRes.(string))
-        return "done"
-    })
-
-// 批量流程
-batchFlow := pocketflow.NewBatchFlow(processNode).
-    Prep(func(shared pocketflow.SharedStore) []map[string]any {
-        items := shared["items"].([]string)
-        params := make([]map[string]any, len(items))
-        for i, item := range items {
-            params[i] = map[string]any{"item": item}
-        }
-        return params
-    })
-
-// 运行批量处理
-batchShared := pocketflow.SharedStore{
-    "items": []string{"item1", "item2", "item3"},
-}
-batchFlow.Run(batchShared)
-
-fmt.Println(results)  // 输出：[item1_processed item2_processed item3_processed]
 ```
 
 ## 核心概念
@@ -172,79 +49,180 @@ fmt.Println(results)  // 输出：[item1_processed item2_processed item3_process
 ```go
 type Node struct {
     name       string
-    prep       PrepFunc     // 准备阶段：从 shared 读取数据
-    exec       ExecFunc     // 执行阶段：处理业务逻辑
-    post       PostFunc     // 后置阶段：保存结果，决定下一步
-    successors map[string]*Node  // 后继节点映射
-    params     map[string]any     // 节点参数
+    prep       PrepFunc              // 准备阶段：从 shared 读取数据
+    exec       ExecFunc              // 执行阶段：处理业务逻辑
+    post       PostFunc              // 后置阶段：保存结果，决定下一步
+    successors map[string]*Node      // 后继节点映射
+    params     map[string]any        // 节点参数
 }
 ```
-
-- **Prep**：准备阶段，从 SharedStore 读取数据
-- **Exec**：执行阶段，处理业务逻辑
-- **Post**：后置阶段，保存结果并决定下一步动作
 
 ### Flow（流程）
 
-流程负责编排节点的执行顺序：
+流程将多个节点串联，按 post 返回的 action 决定下一个节点：
 
 ```go
-type Flow struct {
-    startNode *Node  // 起始节点
-}
+node1 := pocketflow.NewNode("step1").
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        return "next"
+    })
+
+node2 := pocketflow.NewNode("step2").
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        return "end"
+    })
+
+node1.ThenWith("next", node2)
+
+flow := pocketflow.NewFlow(node1)
+flow.Run(shared)
 ```
 
-### SharedStore（共享存储）
+### BatchNode（批量节点）
 
-节点间通过 SharedStore 共享数据：
+Prep 返回切片，Exec 对每个元素串行执行：
 
 ```go
-type SharedStore map[string]any
+batchNode := pocketflow.NewBatchNode("batch").
+    Prep(func(shared pocketflow.SharedStore) any {
+        return []string{"item1", "item2", "item3"}
+    }).
+    Exec(func(item any) any {
+        return "processed-" + item.(string)
+    }).
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        shared["results"] = execRes
+        return "success"
+    })
 ```
 
 ### BatchFlow（批量流程）
 
-批量流程支持对多个数据集执行相同的节点逻辑：
+对同一个 Flow 使用不同参数批量执行：
 
 ```go
-type BatchFlow struct {
-    *Flow
-    prep BatchPrepFunc  // 批量准备函数
+batchFlow := pocketflow.NewBatchFlow(startNode).
+    Prep(func(shared pocketflow.SharedStore) []map[string]any {
+        return []map[string]any{
+            {"item": "item1"},
+            {"item": "item2"},
+        }
+    })
+
+batchFlow.Run(shared)
+```
+
+## 异步组件
+
+异步组件在 goroutine 中执行，返回 `<-chan AsyncResult`，不阻塞调用者。
+
+### AsyncNode
+
+```go
+asyncNode := pocketflow.NewAsyncNode("async-test").
+    Prep(func(shared pocketflow.SharedStore) any {
+        return shared["input"]
+    }).
+    Exec(func(prepRes any) any {
+        time.Sleep(100 * time.Millisecond)
+        return prepRes.(string) + " processed"
+    }).
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        shared["output"] = execRes
+        return "success"
+    })
+
+shared := pocketflow.SharedStore{"input": "test data"}
+resultChan := asyncNode.RunAsync(shared)
+
+select {
+case result := <-resultChan:
+    fmt.Printf("action: %s\n", result.Action)
+case <-time.After(time.Second):
+    fmt.Println("超时")
 }
 ```
 
-## API 参考
+### AsyncBatchNode
 
-### Node 方法
+Exec 阶段并行处理每个 item，结果保序：
 
-| 方法 | 描述 |
-|------|------|
-| `NewNode(name string) *Node` | 创建新节点 |
-| `Prep(fn PrepFunc) *Node` | 设置准备函数 |
-| `Exec(fn ExecFunc) *Node` | 设置执行函数 |
-| `Post(fn PostFunc) *Node` | 设置后置函数 |
-| `Then(next *Node) *Node` | 连接后继节点（默认 action） |
-| `ThenWith(action string, next *Node) *Node` | 连接带特定 action 的后继节点 |
-| `SetParams(params map[string]any) *Node` | 设置节点参数 |
-| `GetParam(key string) (any, bool)` | 获取节点参数 |
-| `Clone() *Node` | 克隆节点（状态隔离） |
+```go
+batchNode := pocketflow.NewBatchNode("batch").
+    Prep(func(shared pocketflow.SharedStore) any {
+        return []string{"item1", "item2", "item3"}
+    }).
+    Exec(func(item any) any {
+        return "processed-" + item.(string)
+    }).
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        shared["results"] = execRes
+        return "success"
+    })
 
-### Flow 方法
+asyncBatchNode := pocketflow.NewAsyncBatchNode(batchNode)
+resultChan := asyncBatchNode.RunAsync(shared)
+```
 
-| 方法 | 描述 |
-|------|------|
-| `NewFlow(start *Node) *Flow` | 创建新流程 |
-| `Run(shared SharedStore) string` | 运行流程 |
+### AsyncFlow
 
-### BatchFlow 方法
+```go
+node1 := pocketflow.NewAsyncNode("step1").
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        return "next"
+    })
 
-| 方法 | 描述 |
-|------|------|
-| `NewBatchFlow(start *Node) *BatchFlow` | 创建批量流程 |
-| `Prep(fn BatchPrepFunc) *BatchFlow` | 设置批量准备函数 |
-| `Run(shared SharedStore) string` | 运行批量流程 |
+node2 := pocketflow.NewNode("step2").
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        return "end"
+    })
 
-## 设计模式
+node1.ThenWith("next", node2)
+
+asyncFlow := pocketflow.NewAsyncFlow(node1)
+resultChan := asyncFlow.RunAsync(shared)
+```
+
+### AsyncBatchFlow
+
+每个 batch 并行执行整个 Flow：
+
+```go
+asyncBatchFlow := pocketflow.NewAsyncBatchFlow(batchFlow)
+resultChan := asyncBatchFlow.RunAsync(shared)
+```
+
+### 同步 vs 异步
+
+| 同步 | 异步 | 区别 |
+|------|------|------|
+| `Node` | `AsyncNode` | goroutine 中执行 |
+| `BatchNode` | `AsyncBatchNode` | Exec 阶段并行处理 |
+| `Flow` | `AsyncFlow` | goroutine 中执行 |
+| `BatchFlow` | `AsyncBatchFlow` | 每个 batch 并行执行 |
+
+## 条件分支
+
+通过 Post 返回不同 action 实现分支：
+
+```go
+decide := pocketflow.NewNode("decide").
+    Post(func(shared pocketflow.SharedStore, prepRes, execRes any) string {
+        if needAction {
+            return "action"
+        }
+        return "done"
+    })
+
+handler := pocketflow.NewNode("handler")
+done := pocketflow.NewNode("done")
+
+decide.ThenWith("action", handler)
+decide.ThenWith("done", done)
+handler.Then(decide) // 循环回 decide，实现 Agent 模式
+```
+
+## 常见模式
 
 | 模式 | 实现方式 |
 |------|----------|
@@ -252,7 +230,6 @@ type BatchFlow struct {
 | **Agent** | 条件分支：`decide.ThenWith("action", handler)` |
 | **RAG** | Prep 检索 → Exec 生成 → Post 存储 |
 | **MapReduce** | BatchFlow(map) → Node(reduce) |
-| **批量处理** | BatchFlow 支持并行/串行批量执行 |
 
 ## 与 Python 版本对比
 
@@ -267,40 +244,14 @@ type BatchFlow struct {
 
 - ✅ **极简主义** - 最少的抽象覆盖最多场景
 - ✅ **类型安全** - Go 的静态类型保证
-- ✅ **高性能** - 无反射，编译优化
 - ✅ **易测试** - 纯函数，依赖注入
 - ✅ **Go 风格** - 符合 Go 语言习惯
-- ✅ **状态隔离** - 每次运行独立，避免副作用
-
-## 文件结构
-
-```
-go-pocketflow/
-├── node.go           # Node 核心实现
-├── flow.go           # Flow 和 BatchFlow 实现
-├── pocketflow_test.go # 测试文件
-└── README.md         # 文档
-```
 
 ## 测试
-
-运行测试：
 
 ```bash
 go test -v
 ```
-
-测试覆盖：
-- Node 基础功能
-- Flow 流程编排
-- 条件分支（Agent 模式）
-- 批量处理
-- 节点克隆
-- 参数传递
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
 
 ## 许可证
 

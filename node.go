@@ -12,10 +12,6 @@ type ExecFunc func(prepRes any) any
 
 type PostFunc func(shared SharedStore, prepRes, execRes any) string
 
-type NodeRunner interface {
-	Run(n *Node, shared SharedStore) string
-}
-
 func convertToAnySlice(value any) []any {
 	v := reflect.ValueOf(value)
 	if v.Kind() != reflect.Slice {
@@ -36,61 +32,6 @@ type Node struct {
 	post       PostFunc
 	successors map[string]*Node
 	params     map[string]any
-	runner     NodeRunner
-}
-
-type SingleRunner struct{}
-
-func (r *SingleRunner) Run(n *Node, shared SharedStore) string {
-	var prepRes any
-	if n.prep != nil {
-		prepRes = n.prep(shared)
-	}
-
-	var execRes any
-	if n.exec != nil {
-		execRes = n.exec(prepRes)
-	}
-
-	var action string
-	if n.post != nil {
-		action = n.post(shared, prepRes, execRes)
-	} else {
-		action = "default"
-	}
-
-	return action
-}
-
-type BatchRunner struct{}
-
-func (r *BatchRunner) Run(n *Node, shared SharedStore) string {
-	var prepRes any
-	if n.prep != nil {
-		prepRes = n.prep(shared)
-	}
-
-	var execRes any
-	if n.exec != nil {
-		if items := convertToAnySlice(prepRes); items != nil {
-			results := make([]any, len(items))
-			for i, item := range items {
-				results[i] = n.exec(item)
-			}
-			execRes = results
-		} else {
-			execRes = []any{n.exec(prepRes)}
-		}
-	}
-
-	var action string
-	if n.post != nil {
-		action = n.post(shared, prepRes, execRes)
-	} else {
-		action = "default"
-	}
-
-	return action
 }
 
 func NewNode(name string) *Node {
@@ -98,7 +39,6 @@ func NewNode(name string) *Node {
 		name:       name,
 		successors: make(map[string]*Node),
 		params:     make(map[string]any),
-		runner:     &SingleRunner{},
 	}
 }
 
@@ -146,7 +86,24 @@ func (n *Node) GetNext(action string) *Node {
 }
 
 func (n *Node) Run(shared SharedStore) string {
-	return n.runner.Run(n, shared)
+	var prepRes any
+	if n.prep != nil {
+		prepRes = n.prep(shared)
+	}
+
+	var execRes any
+	if n.exec != nil {
+		execRes = n.exec(prepRes)
+	}
+
+	var action string
+	if n.post != nil {
+		action = n.post(shared, prepRes, execRes)
+	} else {
+		action = "default"
+	}
+
+	return action
 }
 
 func (n *Node) Clone() *Node {
@@ -157,7 +114,6 @@ func (n *Node) Clone() *Node {
 		post:       n.post,
 		successors: make(map[string]*Node),
 		params:     make(map[string]any),
-		runner:     n.runner,
 	}
 
 	for k, v := range n.params {
@@ -181,17 +137,53 @@ type BatchNode struct {
 
 func NewBatchNode(name string) *BatchNode {
 	return &BatchNode{
-		Node: &Node{
-			name:       name,
-			successors: make(map[string]*Node),
-			params:     make(map[string]any),
-			runner:     &BatchRunner{},
-		},
+		Node: NewNode(name),
 	}
 }
 
-func (n *BatchNode) Clone() *BatchNode {
+func (bn *BatchNode) Prep(prepFunc func(shared SharedStore) any) *BatchNode {
+	bn.Node.Prep(prepFunc)
+	return bn
+}
+
+func (bn *BatchNode) Exec(execFunc func(prepRes any) any) *BatchNode {
+	bn.Node.Exec(execFunc)
+	return bn
+}
+
+func (bn *BatchNode) Post(postFunc func(shared SharedStore, prepRes, execRes any) string) *BatchNode {
+	bn.Node.Post(postFunc)
+	return bn
+}
+
+func (bn *BatchNode) Clone() *BatchNode {
 	return &BatchNode{
-		Node: n.Node.Clone(),
+		Node: bn.Node.Clone(),
 	}
+}
+
+func (bn *BatchNode) Run(shared SharedStore) string {
+	var prepRes any
+	if bn.prep != nil {
+		prepRes = bn.prep(shared)
+	}
+
+	var execRes any
+	if bn.exec != nil {
+		if items := convertToAnySlice(prepRes); items != nil {
+			results := make([]any, len(items))
+			for i, item := range items {
+				results[i] = bn.exec(item)
+			}
+			execRes = results
+		} else {
+			execRes = []any{bn.exec(prepRes)}
+		}
+	}
+
+	if bn.post != nil {
+		return bn.post(shared, prepRes, execRes)
+	}
+
+	return "default"
 }
